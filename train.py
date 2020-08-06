@@ -2,17 +2,20 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from Hourglass import get_model
-from TrainDataGen import train_generator, val_generator
+from DataGen import train_generator
+from tensorflow import keras
+from tensorflow.keras.optimizers import Adam, RMSprop, SGD
+import os
+from tensorflow.keras.callbacks import ModelCheckpoint
 
-
-import tensorflow.keras as keras
 checkpoint_path = F"latest_model/cp.ckpt" 
 checkpoint_dir = os.path.dirname(checkpoint_path)
 cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                  save_weights_only=True,
                                                  verbose=1)
 
-def train_model(model, epochs, load_wts =  ):
+
+def train_model(model, epochs, batch_size, train_split, load_wts):
     
     def focal_loss(hm_true, hm_pred):
         #hm_pred = tf.squeeze(hm_pred)
@@ -46,18 +49,28 @@ def train_model(model, epochs, load_wts =  ):
         reg_loss = total_loss / (tf.reduce_sum(mask) + 1e-4)
         
         return reg_loss
+
+    df = np.load('image_names.npy')
+    l = len(df)*train_split//100
+    train = df[:l]
+    val = df[l:]
+    train_gen = train_generator(train, batch_size)
+    val_gen = train_generator(val, batch_size)
     model.compile(optimizer=Adam(),
                    loss={'d1':l1_loss, 'h1':focal_loss})
+    if load_wts == 1:
+        model.load_wts(checkpoint_path)
+    model.fit(train_gen, steps_per_epoch = 17000//4, epochs = epochs, callbacks = [cp_callback])
     
-    history = model.fit(train_generator, steps_per_epoch = 17000//4, epochs = epochs, callbacks = [cp_callback])
-    return model,history
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ep', default='10', type=str)
-    parser.add_argument('--output', default='output', type=str)
-    parser.add_argument('--inres', default='512,512', type=str)
+    parser.add_argument('--ep', default=10, type=int)
+    parser.add_argument('--tr_split', default=90, type=int)
+    parser.add_argument('--batch_size', default=8, type=int)
+    parser.add_argument('--wts', default=0, type=int)
 
-    epochs = int(ep)
-    model, history = train(epochs)
-    model.save()
+    model = get_model()
+    
+    train_model(model, ep, batch_size, tr_split, wts)
+    

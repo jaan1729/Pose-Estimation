@@ -17,15 +17,17 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 from operator import itemgetter
 from scipy.ndimage.filters import maximum_filter
 from scipy.spatial.transform import Rotation as R
-from tqdm.notebook import tqdm
 from skimage.morphology import watershed
 from skimage.feature import peak_local_max
 from skimage import measure
 from math import floor
 import random
+import shutil
+import argparse
 
-path = "train"
-train = pd.read_csv("train.csv")
+
+
+test = pd.read_csv("data/test")
 img_h, img_w = 1355, 3384
 iimg_h, iimg_w = 512, 1280
 ip_h, ip_w = 512, 2560
@@ -35,7 +37,7 @@ k = np.array([[2304.5479, 0,  1686.2379],
            [0, 2305.8757, 1354.9849],
            [0, 0, 1]], dtype=np.float32)
 
-def read_img(idx):
+def read_img(path, idx):
     img = cv2.imread(path + '_images/%s.jpg'%train.iloc[idx].ImageId)[:,:,::-1]
     return img
 
@@ -223,20 +225,30 @@ def get_enhanced(img):
   return img_enh
 
 
-def transform_and_save(df=train):   
+def transform_and_save(df=train, path):    
     ImgIds = []
-    PredStrs = []
-    for n in trange(1,len(df)):
+    if os.path.isdir('train_inputs'):
+      shutil.rmtree('train_inputs', ignore_errors=True)
+    if os.path.isdir('train_hms'):
+      shutil.rmtree('train_hms', ignore_errors=True)
+    if os.path.isdir('train_regs'):
+      shutil.rmtree('train_regs', ignore_errors=True)
+    
+    os.mkdir('train_inputs')
+    os.mkdir('train_hms')
+    os.mkdir('train_regs')
+    print('created directories')
+    for n in range(0,len(df)):
       img_file = path + '_images/%s.jpg'%df.iloc[n].ImageId
       mask_file = path + '_masks/%s.jpg'%df.iloc[n].ImageId
       img = cv2.imread(img_file)
       mask = cv2.imread(mask_file)
-      os.remove(img_file)
+      
       
       parameters = get_parameters()
       if mask is not None:
           img = img*(mask<128)   
-          os.remove(mask_file)         
+                  
       img = img[1355:,:,::-1]
       #parameters = get_parameters()
       string = train.iloc[n].PredictionString
@@ -284,6 +296,9 @@ def transform_and_save(df=train):
       np.save('train_inputs/%s_%d_e.npy'%(df.iloc[n].ImageId,0),perspected_img_e)
       np.save('train_inputs/%s_%d_n.npy'%(df.iloc[n].ImageId,1),p_rotated_img)
       np.save('train_inputs/%s_%d_e.npy'%(df.iloc[n].ImageId,1),p_rotated_img_e)
+      
+      ImgIds.append('%s_%d.npy'%(df.iloc[n].ImageId,0))
+      ImgIds.append('%s_%d.npy'%(df.iloc[n].ImageId,1))
 
       coords = str_to_coords(string)
       hm, reg = pose(coords,iimg_h,iimg_w)
@@ -323,16 +338,15 @@ def transform_and_save(df=train):
       op_reg = np.zeros_like(reg)
       y,x = np.where(op_hm == 1)
       op_reg[y,x,:] = reg[y,x,:]
+      op_hm = np.reshape(op_hm, op_hm.shape + (1,))
 
       np.save('train_hms/%s_%d.npy'%(df.iloc[n].ImageId,1),op_hm)
       np.save('train_regs/%s_%d.npy'%(df.iloc[n].ImageId,1),op_reg)
-        
-parameters = get_parameters()
-M = parameters['pers']
-batch_size = 4
+      if n%200 == 0: print('completed %d images'%n)
+    np.save('image_names.npy', np.array(ImgIds))
 
-
-def train_generator():
+def train_generator(df, batch_size  ):                
+  
     while True:
         xo,yo = ip_w, ip_h
         ref = np.reshape(np.arange(0, xo*yo), (yo, xo, -1))
@@ -344,31 +358,19 @@ def train_generator():
         transformed_hms = []
         transformed_regs = []
         input_ref = []
+        parameters = get_parameters()
+        M = parameters['pers']
         for i in range(len(df)):
 
-          img = cv2.imread('train_inputs/'+df[i,0]+'.jpg')
+          img = np.load('train_inputs/%s_%s'%(df[i], random.choice(['n','e']))+'.npy')
           img = normalize_image(img/255.)
           s = df[i,1]
           
-          coords = str_to_coords(s)
-          hm, reg = pose(coords,iimg_h,iimg_w)
+          op_hm = np.load('train_hms/%s.npy'%(df[i]))
+          op_reg = np.load('train_regs/%s.npy'%(df[i]))
           
           img_flipped = img[:,::-1,:].copy()
 
-          perspected_hm = cv2.warpPerspective(hm,M, (ip_w, ip_h))
-          perspected_reg = cv2.warpPerspective(reg,M, (ip_w, ip_h), flags = cv2.INTER_NEAREST)
-
-          perspected_hm_tf = tf.reshape(perspected_hm, [1,ip_h,ip_w,1])
-          op_hm = tf.nn.max_pool2d(perspected_hm_tf, 4, 4, padding = 'VALID')
-          reg = cv2.resize(perspected_reg, (op_w,op_h), interpolation = cv2.INTER_NEAREST)
-          
-
-          op_hm = np.squeeze(op_hm.numpy())
-          
-          op_hm[(op_hm*(op_hm == maximum_filter(op_hm,footprint=np.ones((3,3))))>0.1)] = 1
-          op_reg = np.zeros_like(reg)
-          y,x = np.where(op_hm == 1)
-          op_reg[y,x,:] = reg[y,x,:]
           op_hm_f = op_hm[:,::-1].copy()
           op_reg_f = op_reg[:,::-1,:].copy()
           op_reg_f[:,:,2:5] = -op_reg_f[:,:,2:5]
@@ -386,7 +388,6 @@ def train_generator():
             t_hms = np.array(transformed_hms)
             t_regs = np.array(transformed_regs)
             ip_ref = np.array(input_ref)
-            t_hms = np.reshape(t_hms, t_hms.shape + (1,))
             transformed_images = []
             transformed_hms = []
             transformed_regs = []
@@ -399,7 +400,8 @@ def train_generator():
             
             #print(transformed_images.shape, transformed_hms.shape, transformed_regs.shape, input_ref.shape)
 
-def test_generator(df):
+def test_generator(sub):
+
   while True:
     xo,yo = ip_w, ip_h
     ref = np.reshape(np.arange(0, xo*yo), (yo, xo, -1))
@@ -446,3 +448,12 @@ def test_generator(df):
       input_coor = []
       
       yield [tmp_inputs, tmp_input_coor]
+
+def main():
+  path = "data/train"
+  train = pd.read_csv("data/train.csv")
+  transform_and_save(train, path)
+  print('completed saving input files')
+    
+if name == '__main__':
+  main()
