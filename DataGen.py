@@ -27,7 +27,7 @@ import argparse
 
 
 
-test = pd.read_csv("data/test")
+
 img_h, img_w = 1355, 3384
 iimg_h, iimg_w = 512, 1280
 ip_h, ip_w = 512, 2560
@@ -225,7 +225,7 @@ def get_enhanced(img):
   return img_enh
 
 
-def transform_and_save(df=train, path):    
+def transform_and_save(path, df):    
     ImgIds = []
     if os.path.isdir('train_inputs'):
       shutil.rmtree('train_inputs', ignore_errors=True)
@@ -238,7 +238,7 @@ def transform_and_save(df=train, path):
     os.mkdir('train_hms')
     os.mkdir('train_regs')
     print('created directories')
-    for n in range(0,len(df)):
+    for n in range(len(df)):
       img_file = path + '_images/%s.jpg'%df.iloc[n].ImageId
       mask_file = path + '_masks/%s.jpg'%df.iloc[n].ImageId
       img = cv2.imread(img_file)
@@ -251,7 +251,7 @@ def transform_and_save(df=train, path):
                   
       img = img[1355:,:,::-1]
       #parameters = get_parameters()
-      string = train.iloc[n].PredictionString
+      string = df.iloc[n].PredictionString
       
       
       roti, trxi = str_to_arrays(string)
@@ -297,8 +297,8 @@ def transform_and_save(df=train, path):
       np.save('train_inputs/%s_%d_n.npy'%(df.iloc[n].ImageId,1),p_rotated_img)
       np.save('train_inputs/%s_%d_e.npy'%(df.iloc[n].ImageId,1),p_rotated_img_e)
       
-      ImgIds.append('%s_%d.npy'%(df.iloc[n].ImageId,0))
-      ImgIds.append('%s_%d.npy'%(df.iloc[n].ImageId,1))
+      ImgIds.append('%s_%d'%(df.iloc[n].ImageId,0))
+      ImgIds.append('%s_%d'%(df.iloc[n].ImageId,1))
 
       coords = str_to_coords(string)
       hm, reg = pose(coords,iimg_h,iimg_w)
@@ -308,15 +308,16 @@ def transform_and_save(df=train, path):
 
       perspected_hm_tf = tf.reshape(perspected_hm, [1,ip_h,ip_w,1])
       op_hm = tf.nn.max_pool2d(perspected_hm_tf, 4, 4, padding = 'VALID')
-      reg = cv2.resize(perspected_reg, (op_w,op_h), interpolation = cv2.INTER_NEAREST)
+      op_reg_t = cv2.resize(perspected_reg, (op_w,op_h), interpolation = cv2.INTER_NEAREST)
       
 
       op_hm = np.squeeze(op_hm.numpy())
       
       op_hm[(op_hm*(op_hm == maximum_filter(op_hm,footprint=np.ones((3,3))))>0.1)] = 1
-      op_reg = np.zeros_like(reg)
+      op_reg = np.zeros_like(op_reg_t)
       y,x = np.where(op_hm == 1)
-      op_reg[y,x,:] = reg[y,x,:]
+      op_reg[y,x,:] = op_reg_t[y,x,:]
+      op_hm = np.reshape(op_hm, op_hm.shape + (1,))
 
       np.save('train_hms/%s_%d.npy'%(df.iloc[n].ImageId,0),op_hm)
       np.save('train_regs/%s_%d.npy'%(df.iloc[n].ImageId,0),op_reg)
@@ -364,11 +365,14 @@ def train_generator(df, batch_size  ):
 
           img = np.load('train_inputs/%s_%s'%(df[i], random.choice(['n','e']))+'.npy')
           img = normalize_image(img/255.)
-          s = df[i,1]
+          
           
           op_hm = np.load('train_hms/%s.npy'%(df[i]))
+          #op_hm = np.squeeze(op_hm)
+          #op_hm = np.reshape(op_hm, op_hm.shape + (1,))
+
           op_reg = np.load('train_regs/%s.npy'%(df[i]))
-          
+          #print(i,'   ',op_hm.shape)    
           img_flipped = img[:,::-1,:].copy()
 
           op_hm_f = op_hm[:,::-1].copy()
@@ -382,7 +386,22 @@ def train_generator(df, batch_size  ):
           transformed_regs.append(op_reg_f)
           input_ref.append(coor)
           input_ref.append(coor)
-          if (i+1)%(batch_size//2) == 0:
+          if batch_size == 1:
+            f = np.random.choice([0,1])
+            t_images = np.array(transformed_images[f])
+            t_hms = np.array(transformed_hms[f])
+            t_regs = np.array(transformed_regs[f])
+            ip_ref = np.array(input_ref[f])
+            transformed_images = []
+            transformed_hms = []
+            transformed_regs = []
+            input_ref = []
+            d = dict()
+            d['h1'] = t_hms
+            d['d1'] = t_regs
+            yield ([t_images, ip_ref], d)
+
+          elif (i+1)%(batch_size//2) == 0:
             
             t_images = np.array(transformed_images)
             t_hms = np.array(transformed_hms)
@@ -449,11 +468,3 @@ def test_generator(sub):
       
       yield [tmp_inputs, tmp_input_coor]
 
-def main():
-  path = "data/train"
-  train = pd.read_csv("data/train.csv")
-  transform_and_save(train, path)
-  print('completed saving input files')
-    
-if name == '__main__':
-  main()

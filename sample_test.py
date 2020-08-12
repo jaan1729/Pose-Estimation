@@ -7,6 +7,7 @@ from tensorflow import keras
 from tensorflow.keras.optimizers import Adam, RMSprop, SGD
 import os
 from tensorflow.keras.callbacks import ModelCheckpoint
+import matplotlib.pyplot as plt
 
 checkpoint_path = F"latest_model/cp.ckpt" 
 checkpoint_dir = os.path.dirname(checkpoint_path)
@@ -14,8 +15,11 @@ cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                  save_weights_only=True,
                                                  verbose=1)
 
-
-def train_model(model, epochs, batch_size, train_split, load_wts):
+def denormalize_image(image):
+    mean = [0.40789655, 0.44719303, 0.47026116]
+    std = [0.2886383, 0.27408165, 0.27809834]
+    return np.uint8((image*std + mean)*255)
+def train_model(model, epochs, batch_size, train_split, load_wts=1):
     
     def focal_loss(hm_true, hm_pred):
         #hm_pred = tf.squeeze(hm_pred)
@@ -52,39 +56,39 @@ def train_model(model, epochs, batch_size, train_split, load_wts):
 
     df = np.load('image_names.npy')
     l = len(df)*train_split//100
-    print('sizes:  ',len(df), l)
     train = df[:l]
-    np.random.shuffle(train)
     val = df[l:]
     val_size = len(df)-l
     train_gen = train_generator(train, batch_size)
-    val_gen = train_generator(val, 4)
-    lr_schedule = keras.optimizers.schedules.ExponentialDecay(
-                    initial_learning_rate=1e-3,
-                    decay_steps=5000,
-                    decay_rate=0.9)
-    optimizer = Adam(learning_rate=lr_schedule)               
-    model.compile(optimizer=optimizer,
-                   loss={'d1':l1_loss, 'h1':focal_loss})
+    val_gen = train_generator(val, batch_size)
+    
+    
+    model.compile(optimizer=Adam(),
+                   loss={'d1':l1_loss, 'h1':focal_loss}, loss_weights = {'d1':0.01,'h1':0.99})
     if load_wts == 1:
-
         model.load_weights(checkpoint_path)
-    
-    epoch_steps = l if batch_size ==1 else l//(batch_size//2)
-    model.fit(train_gen, steps_per_epoch = epoch_steps , epochs = epochs, 
-    verbose = 1, validation_data = val_gen, validation_steps=val_size//(4//2), callbacks = [cp_callback]) 
-    #callbacks = [cp_callback]) l//(batch_size//2)  val_size//(batch_size//
-    
+    preds = []
+    for i in range(1):
+        ip, op = next(val_gen)
+        plt.imshow(denormalize_image(ip[0][2]))
+        plt.show()
+        pred = model.predict(ip)
+        preds.append([pred, op])
+    return preds 
     
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ep', default=10, type=int)
     parser.add_argument('--tr_split', default=90, type=int)
-    parser.add_argument('--batch_size', default= 2, type=int)
+    parser.add_argument('--batch_size', default=4, type=int)
     parser.add_argument('--wts', default=1, type=int)
     args, _ = parser.parse_known_args()
     model = get_model()
     
-    train_model(model,args.ep,args.batch_size, args.tr_split, args.wts)
+    preds = train_model(model,args.ep,args.batch_size, args.tr_split, args.wts)
+    preds = np.array(preds)
+    print(len(preds[0]))
+    #plt.imshow(np.squeeze(preds[0][0][0]))
+    #plt.show()
 main()    

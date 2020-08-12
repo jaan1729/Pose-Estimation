@@ -17,6 +17,8 @@ HPDET_COCO_WEIGHTS_PATH = (
     'https://github.com/see--/keras-centernet/'
     'releases/download/0.1.0/hpdet_coco_hg.hdf5')
 
+bn_train = False
+bn_train2 = True
 
 def hourglass_module(heads, bottom, cnv_dim, hgid, dims, input_ref):
     lfs = left_features(bottom, hgid, dims)
@@ -26,6 +28,7 @@ def hourglass_module(heads, bottom, cnv_dim, hgid, dims, input_ref):
     return heads, rf1
 
 def convolution(_x, k, out_dim, name, stride=1):
+    
     padding = (k - 1) // 2
     _x = ZeroPadding2D(padding=padding, name=name + '.pad')(_x)
     _x = Conv2D(out_dim, k, strides=stride, use_bias=False, name=name + '.conv')(_x)
@@ -221,7 +224,7 @@ def HourglassNetwork(heads, num_stacks=2, cnv_dim=256, inres=(512, 512), weights
 
     return model
 
-def get_model(bn_train = False,bn_train2 = False):
+def get_model(bn_train = False,bn_train2 = True):
     heads = {'classes': 34, 'hm_car': 1, 'reg_car': 2, 'dof_car': 8}
     model = HourglassNetwork(heads, num_stacks=2, inres=(None, None, None, None))
     
@@ -240,10 +243,11 @@ def get_model(bn_train = False,bn_train2 = False):
                 layer.trainable = True
     
     elif bn_train == False:
+        print('training deeply')
         for layer in model.layers:
-            layer.trainable = False
+            layer.trainable = True
     
-            for tl in train_layers:
+        """    for tl in train_layers:
                 if layer.name[:len(tl)] == tl :
                     layer.trainable = True
     
@@ -255,8 +259,11 @@ def get_model(bn_train = False,bn_train2 = False):
                 layer.trainable = True        
             elif layer.name[:9]=='classes.1':
                 layer.trainable = True  
-            elif layer.name[1]=='1':
+            if layer.name=='d1':
                 layer.trainable = True
+            
+            if layer.name[:3]=='hm1':
+                layer.trainable = True"""
     
             #if layer.trainable == True:
                 #print(layer.name)
