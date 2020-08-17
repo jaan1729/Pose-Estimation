@@ -70,8 +70,8 @@ def train_model(model, epochs, batch_size, train_split, load_wts=1):
     preds = []
     for i in range(1):
         ip, op = next(val_gen)
-        plt.imshow(denormalize_image(ip[0][2]))
-        plt.show()
+        #plt.imshow(denormalize_image(ip[0][2]))
+        #plt.show()
         pred = model.predict(ip)
         preds.append([pred, op])
     return preds 
@@ -87,8 +87,10 @@ def main():
     model = get_model()
     
     preds = train_model(model,args.ep,args.batch_size, args.tr_split, args.wts)
-    preds = np.array(preds)
+    #preds = np.array(preds)
     print(len(preds[0]))
-    #plt.imshow(np.squeeze(preds[0][0][0]))
-    #plt.show()
+    print(preds[0][0][3][0].shape)
+    print(preds[0][0][3][0][80:90,400:410,0])
+    plt.imshow(np.squeeze(preds[0][0][3][0][:,:,0]))
+    plt.show()
 main()    

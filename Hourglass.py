@@ -128,9 +128,9 @@ def create_heads(heads, rf1, hgid, input_ref):
         _x = Conv2D(256, 3, use_bias=True, padding='same', name=head + '.%d.0.conv' % hgid)(rf1)
         _x = Activation('relu', name=head + '.%d.0.relu' % hgid)(_x)
         _x = Conv2D(num_channels, 1, use_bias=True, name=head[0] + '%d' % hgid)(_x)
-        _heads.append(_x)
+        #_heads.append(_x)
 
-    hm = Lambda(hm_stop_gradient, name='hm_ref.'+ '%d' % hgid)(_heads[0])
+    hm = Lambda(hm_stop_gradient, name='hm_ref.'+ '%d' % hgid)(_x)
     hm = Concatenate()([rf1, hm])
 
     if hgid >= 0:
@@ -141,14 +141,14 @@ def create_heads(heads, rf1, hgid, input_ref):
         _x = Conv2D(num_channels, 1, use_bias=True, name=head[0] + '%d' % hgid)(_x)
         _heads.append(_x) 
 
-    if hgid >= 0:
+    """if hgid >= 0:
         head = keys[2]
         num_channels = heads[head]
         #_x = Lambda(stop_gradient, name=head + '.%d.stop_g' % hgid)(hm)
         _x = Conv2D(256, 3, use_bias=True, padding='same', name=head + '.%d.0.conv' % hgid)(hm)
         _x = Activation('relu', name=head + '.%d.0.relu' % hgid)(_x)
         _x = Conv2D(num_channels, 1, use_bias=True, name=head[0] + '%d' % hgid)(_x)
-        _heads.append(_x)
+        _heads.append(_x)"""
 
     if hgid >= 0:
         head = keys[-1]
@@ -206,6 +206,7 @@ def HourglassNetwork(heads, num_stacks=2, cnv_dim=256, inres=(512, 512), weights
     
     # I use pretrain when training
     if weights == 'ctdet_coco':
+        print('loading ctdet coco')
         weights_path = get_file(
             '%s_hg.hdf5' % weights,
             CTDET_COCO_WEIGHTS_PATH,
@@ -225,7 +226,7 @@ def HourglassNetwork(heads, num_stacks=2, cnv_dim=256, inres=(512, 512), weights
     return model
 
 def get_model(bn_train = False,bn_train2 = True):
-    heads = {'classes': 34, 'hm_car': 1, 'reg_car': 2, 'dof_car': 8}
+    heads = {'classes': 34, 'hm_car': 1, 'dof_car': 8}
     model = HourglassNetwork(heads, num_stacks=2, inres=(None, None, None, None))
     
     train_layers = ['kps.1.out', 'kps.1.skip', 'cnvs.1']
@@ -245,25 +246,25 @@ def get_model(bn_train = False,bn_train2 = True):
     elif bn_train == False:
         print('training deeply')
         for layer in model.layers:
-            layer.trainable = True
+            layer.trainable = False
     
-        """    for tl in train_layers:
-                if layer.name[:len(tl)] == tl :
-                    layer.trainable = True
+        for tl in train_layers:
+            if layer.name[:len(tl)] == tl :
+                layer.trainable = True
     
             if layer.name[:4]=='1dof':
                 layer.trainable = True
-            elif layer.name[:9]=='reg_car.1':
-                layer.trainable = True            
+                      
             elif layer.name[:8]=='hm_car.1':
                 layer.trainable = True        
             elif layer.name[:9]=='classes.1':
                 layer.trainable = True  
+            if layer.name=='c1':
+                layer.trainable = True
             if layer.name=='d1':
                 layer.trainable = True
-            
-            if layer.name[:3]=='hm1':
-                layer.trainable = True"""
+            if layer.name[:3]=='h1':
+                layer.trainable = True
     
             #if layer.trainable == True:
                 #print(layer.name)

@@ -60,7 +60,7 @@ def train_model(model, epochs, batch_size, train_split, load_wts):
     train_gen = train_generator(train, batch_size)
     val_gen = train_generator(val, 4)
     lr_schedule = keras.optimizers.schedules.ExponentialDecay(
-                    initial_learning_rate=1e-3,
+                    initial_learning_rate=1e-2,
                     decay_steps=5000,
                     decay_rate=0.9)
     optimizer = Adam(learning_rate=lr_schedule)               
@@ -79,9 +79,9 @@ def train_model(model, epochs, batch_size, train_split, load_wts):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ep', default=10, type=int)
+    parser.add_argument('--ep', default=20, type=int)
     parser.add_argument('--tr_split', default=90, type=int)
-    parser.add_argument('--batch_size', default= 2, type=int)
+    parser.add_argument('--batch_size', default= 4, type=int)
     parser.add_argument('--wts', default=1, type=int)
     args, _ = parser.parse_known_args()
     model = get_model()
